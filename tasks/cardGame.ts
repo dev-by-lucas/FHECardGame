@@ -28,23 +28,23 @@ task("game:start", "Starts a new game").setAction(async (taskArguments: TaskArgu
 });
 
 task("game:play", "Plays a card in the current game")
-  .addParam("card", "Card value between 1 and 13")
+  .addParam("index", "Card index between 0 and 4")
   .setAction(async (taskArguments: TaskArguments, hre) => {
     const deployment = await getCardGameDeployment(taskArguments, hre);
     const { ethers } = hre;
 
-    const card = parseInt(taskArguments.card, 10);
-    if (!Number.isInteger(card) || card < 1 || card > 13) {
-      throw new Error("Card must be an integer between 1 and 13");
+    const index = parseInt(taskArguments.index, 10);
+    if (!Number.isInteger(index) || index < 0 || index >= 5) {
+      throw new Error("Index must be an integer between 0 and 4");
     }
 
     const [signer] = await ethers.getSigners();
     const contract = await ethers.getContractAt("CardGame", deployment.address);
 
-    const tx = await contract.connect(signer).playCard(card);
+    const tx = await contract.connect(signer).playCard(index);
     console.log(`playCard tx: ${tx.hash}`);
     await tx.wait();
-    console.log(`Played card ${card}`);
+    console.log(`Played card at index ${index}`);
   });
 
 task("game:view", "Displays the current game state")
@@ -60,15 +60,15 @@ task("game:view", "Displays the current game state")
     const game = await contract.getGame(playerAddress);
 
     const formatted = {
-      playerHand: game[0].map((value: bigint) => Number(value)),
+      playerHand: game[0].map((value: string) => String(value)),
       playerUsed: game[1].map((value: boolean) => value),
-      systemHand: game[2].map((value: bigint) => Number(value)),
+      systemHand: game[2].map((value: string) => String(value)),
       systemRevealed: game[3].map((value: boolean) => value),
       roundsPlayed: Number(game[4]),
-      playerScore: Number(game[5]),
-      systemScore: Number(game[6]),
+      playerScore: String(game[5]),
+      systemScore: String(game[6]),
       active: game[7],
-      lastSystemCard: Number(game[8]),
+      lastSystemCard: String(game[8]),
     };
 
     console.log(JSON.stringify(formatted, null, 2));
