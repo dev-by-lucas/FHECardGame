@@ -1,6 +1,6 @@
 # FHE CardGame - Card Duel Arena
 
-A full-stack blockchain-based card game built on Ethereum, demonstrating the integration of smart contracts with modern web technologies. FHEverse is a strategic card game where players compete against an on-chain system in a five-round duel, with all game logic executed trustlessly on the blockchain.
+A full-stack blockchain-based card game built on Ethereum, demonstrating the integration of smart contracts with modern web technologies. FHE CardGame is a strategic card game where players compete against an on-chain system in a five-round duel, with all game logic executed trustlessly on the blockchain.
 
 ## Table of Contents
 
