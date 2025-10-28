@@ -1,81 +1,91 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-contract CardGame {
+import {FHE, ebool, euint8} from "@fhevm/solidity/lib/FHE.sol";
+import {SepoliaConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
+
+contract CardGame is SepoliaConfig {
+    using FHE for ebool;
+    using FHE for euint8;
+
     uint8 private constant DECK_SIZE = 13;
     uint8 private constant HAND_SIZE = 5;
 
     struct Game {
-        uint8[HAND_SIZE] playerHand;
-        uint8[HAND_SIZE] systemHand;
+        euint8[HAND_SIZE] playerHand;
+        euint8[HAND_SIZE] systemHand;
         bool[HAND_SIZE] playerUsed;
         bool[HAND_SIZE] systemRevealed;
         uint8 roundsPlayed;
-        uint8 playerScore;
-        uint8 systemScore;
+        euint8 playerScore;
+        euint8 systemScore;
         bool active;
-        uint8 lastSystemCard;
+        euint8 lastSystemCard;
     }
 
     mapping(address => Game) private games;
     uint256 private nonce;
 
-    event GameStarted(address indexed player, uint8[HAND_SIZE] playerHand);
+    event GameStarted(address indexed player, bytes32[HAND_SIZE] playerHand);
     event RoundPlayed(
         address indexed player,
-        uint8 playerCard,
-        uint8 systemCard,
-        uint8 playerScore,
-        uint8 systemScore,
+        bytes32 playerCard,
+        bytes32 systemCard,
+        bytes32 playerScore,
+        bytes32 systemScore,
         uint8 roundsPlayed
     );
-    event GameFinished(address indexed player, uint8 playerScore, uint8 systemScore);
+    event GameFinished(address indexed player, bytes32 playerScore, bytes32 systemScore);
+
+    constructor() SepoliaConfig() {}
 
     function startGame() external {
         Game storage game = games[msg.sender];
 
         _dealHands(game, msg.sender);
 
-        emit GameStarted(msg.sender, game.playerHand);
+        emit GameStarted(msg.sender, _snapshotHand(game.playerHand));
     }
 
-    function playCard(uint8 cardValue) external {
+    function playCard(uint8 handIndex) external {
         Game storage game = games[msg.sender];
         require(game.active, "Game not active");
         require(game.roundsPlayed < HAND_SIZE, "Game finished");
+        require(handIndex < HAND_SIZE, "Invalid card index");
+        require(!game.playerUsed[handIndex], "Card already used");
 
-        (uint8 playerIndex, bool hasCard) = _playerCardIndex(game, cardValue);
-        require(hasCard, "Card unavailable");
-
-        game.playerUsed[playerIndex] = true;
+        game.playerUsed[handIndex] = true;
 
         uint8 systemIndex = _nextSystemIndex(game);
-        uint8 systemCard = game.systemHand[systemIndex];
         game.systemRevealed[systemIndex] = true;
+
+        euint8 playerCard = game.playerHand[handIndex];
+        euint8 systemCard = game.systemHand[systemIndex];
+
+        systemCard = _allowForPlayer(systemCard, msg.sender);
+        game.systemHand[systemIndex] = systemCard;
         game.lastSystemCard = systemCard;
 
-        uint8 playerCard = game.playerHand[playerIndex];
+        ebool playerWins = FHE.gt(playerCard, systemCard);
+        ebool systemWins = FHE.gt(systemCard, playerCard);
 
-        if (playerCard > systemCard) {
-            game.playerScore += 1;
-        } else if (playerCard < systemCard) {
-            game.systemScore += 1;
-        }
+        game.playerScore = _incrementScore(game.playerScore, playerWins, msg.sender);
+        game.systemScore = _incrementScore(game.systemScore, systemWins, msg.sender);
 
         game.roundsPlayed += 1;
 
         emit RoundPlayed(
             msg.sender,
-            playerCard,
-            systemCard,
-            game.playerScore,
-            game.systemScore,
+            euint8.unwrap(playerCard),
+            euint8.unwrap(systemCard),
+            euint8.unwrap(game.playerScore),
+            euint8.unwrap(game.systemScore),
             game.roundsPlayed
         );
 
         if (game.roundsPlayed == HAND_SIZE) {
             game.active = false;
-            emit GameFinished(msg.sender, game.playerScore, game.systemScore);
+            emit GameFinished(msg.sender, euint8.unwrap(game.playerScore), euint8.unwrap(game.systemScore));
         }
     }
 
@@ -83,29 +93,28 @@ contract CardGame {
         external
         view
         returns (
-            uint8[HAND_SIZE] memory playerHand,
+            bytes32[HAND_SIZE] memory playerHand,
             bool[HAND_SIZE] memory playerUsed,
-            uint8[HAND_SIZE] memory systemHand,
+            bytes32[HAND_SIZE] memory systemHand,
             bool[HAND_SIZE] memory systemRevealed,
             uint8 roundsPlayed,
-            uint8 playerScore,
-            uint8 systemScore,
+            bytes32 playerScore,
+            bytes32 systemScore,
             bool active,
-            uint8 lastSystemCard
+            bytes32 lastSystemCard
         )
     {
         Game storage game = games[player];
-        return (
-            game.playerHand,
-            game.playerUsed,
-            game.systemHand,
-            game.systemRevealed,
-            game.roundsPlayed,
-            game.playerScore,
-            game.systemScore,
-            game.active,
-            game.lastSystemCard
-        );
+
+        playerHand = _snapshotHand(game.playerHand);
+        systemHand = _snapshotHand(game.systemHand);
+        playerUsed = _snapshotUsage(game.playerUsed);
+        systemRevealed = _snapshotUsage(game.systemRevealed);
+        roundsPlayed = game.roundsPlayed;
+        playerScore = euint8.unwrap(game.playerScore);
+        systemScore = euint8.unwrap(game.systemScore);
+        active = game.active;
+        lastSystemCard = euint8.unwrap(game.lastSystemCard);
     }
 
     function hasActiveGame(address player) external view returns (bool) {
@@ -138,11 +147,13 @@ contract CardGame {
             remaining -= 1;
 
             if (i < HAND_SIZE) {
-                game.playerHand[i] = card;
+                euint8 playerCard = FHE.asEuint8(card);
+                game.playerHand[i] = _allowForPlayer(playerCard, player);
                 game.playerUsed[i] = false;
             } else {
                 uint8 systemPosition = i - HAND_SIZE;
-                game.systemHand[systemPosition] = card;
+                euint8 systemCard = FHE.asEuint8(card);
+                game.systemHand[systemPosition] = _allowForContract(systemCard);
                 game.systemRevealed[systemPosition] = false;
             }
 
@@ -150,19 +161,10 @@ contract CardGame {
         }
 
         game.roundsPlayed = 0;
-        game.playerScore = 0;
-        game.systemScore = 0;
+        game.playerScore = _freshScore(player);
+        game.systemScore = _freshScore(player);
         game.active = true;
-        game.lastSystemCard = 0;
-    }
-
-    function _playerCardIndex(Game storage game, uint8 cardValue) private view returns (uint8, bool) {
-        for (uint8 i = 0; i < HAND_SIZE; i++) {
-            if (!game.playerUsed[i] && game.playerHand[i] == cardValue) {
-                return (i, true);
-            }
-        }
-        return (0, false);
+        game.lastSystemCard = _freshScore(player);
     }
 
     function _nextSystemIndex(Game storage game) private view returns (uint8) {
@@ -172,6 +174,37 @@ contract CardGame {
             }
         }
         revert("System has no cards");
+    }
+
+    function _incrementScore(euint8 current, ebool condition, address player) private returns (euint8) {
+        euint8 addend = FHE.select(condition, FHE.asEuint8(1), FHE.asEuint8(0));
+        euint8 updated = current.add(addend);
+        return _allowForPlayer(updated, player);
+    }
+
+    function _freshScore(address player) private returns (euint8) {
+        return _allowForPlayer(FHE.asEuint8(0), player);
+    }
+
+    function _allowForPlayer(euint8 value, address player) private returns (euint8) {
+        value = value.allowThis();
+        return value.allow(player);
+    }
+
+    function _allowForContract(euint8 value) private returns (euint8) {
+        return value.allowThis();
+    }
+
+    function _snapshotHand(euint8[HAND_SIZE] storage hand) private view returns (bytes32[HAND_SIZE] memory snapshot) {
+        for (uint8 i = 0; i < HAND_SIZE; i++) {
+            snapshot[i] = euint8.unwrap(hand[i]);
+        }
+    }
+
+    function _snapshotUsage(bool[HAND_SIZE] storage flags) private view returns (bool[HAND_SIZE] memory snapshot) {
+        for (uint8 i = 0; i < HAND_SIZE; i++) {
+            snapshot[i] = flags[i];
+        }
     }
 
     function _random(address player) private returns (uint256) {
