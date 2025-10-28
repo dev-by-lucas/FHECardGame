@@ -234,6 +234,11 @@
   border-color: #d1d5db;
 }
 
+.history-item.pending {
+  border-color: #d1d5db;
+  opacity: 0.8;
+}
+
 .history-item .versus {
   color: #6b7280;
   font-weight: 500;
