@@ -1,6 +1,11 @@
-export const CONTRACT_ADDRESS = '0xA70c60a4d77497b561d78055c973ee6f59083aE0';
+export const CONTRACT_ADDRESS = '0x0000000000000000000000000000000000000000';
 
 export const CONTRACT_ABI = [
+  {
+    "inputs": [],
+    "stateMutability": "nonpayable",
+    "type": "constructor"
+  },
   {
     "anonymous": false,
     "inputs": [
@@ -12,15 +17,15 @@ export const CONTRACT_ABI = [
       },
       {
         "indexed": false,
-        "internalType": "uint8",
+        "internalType": "bytes32",
         "name": "playerScore",
-        "type": "uint8"
+        "type": "bytes32"
       },
       {
         "indexed": false,
-        "internalType": "uint8",
+        "internalType": "bytes32",
         "name": "systemScore",
-        "type": "uint8"
+        "type": "bytes32"
       }
     ],
     "name": "GameFinished",
@@ -37,9 +42,9 @@ export const CONTRACT_ABI = [
       },
       {
         "indexed": false,
-        "internalType": "uint8[5]",
+        "internalType": "bytes32[5]",
         "name": "playerHand",
-        "type": "uint8[5]"
+        "type": "bytes32[5]"
       }
     ],
     "name": "GameStarted",
@@ -56,27 +61,27 @@ export const CONTRACT_ABI = [
       },
       {
         "indexed": false,
-        "internalType": "uint8",
+        "internalType": "bytes32",
         "name": "playerCard",
-        "type": "uint8"
+        "type": "bytes32"
       },
       {
         "indexed": false,
-        "internalType": "uint8",
+        "internalType": "bytes32",
         "name": "systemCard",
-        "type": "uint8"
+        "type": "bytes32"
       },
       {
         "indexed": false,
-        "internalType": "uint8",
+        "internalType": "bytes32",
         "name": "playerScore",
-        "type": "uint8"
+        "type": "bytes32"
       },
       {
         "indexed": false,
-        "internalType": "uint8",
+        "internalType": "bytes32",
         "name": "systemScore",
-        "type": "uint8"
+        "type": "bytes32"
       },
       {
         "indexed": false,
@@ -99,9 +104,9 @@ export const CONTRACT_ABI = [
     "name": "getGame",
     "outputs": [
       {
-        "internalType": "uint8[5]",
+        "internalType": "bytes32[5]",
         "name": "playerHand",
-        "type": "uint8[5]"
+        "type": "bytes32[5]"
       },
       {
         "internalType": "bool[5]",
@@ -109,9 +114,9 @@ export const CONTRACT_ABI = [
         "type": "bool[5]"
       },
       {
-        "internalType": "uint8[5]",
+        "internalType": "bytes32[5]",
         "name": "systemHand",
-        "type": "uint8[5]"
+        "type": "bytes32[5]"
       },
       {
         "internalType": "bool[5]",
@@ -124,14 +129,14 @@ export const CONTRACT_ABI = [
         "type": "uint8"
       },
       {
-        "internalType": "uint8",
+        "internalType": "bytes32",
         "name": "playerScore",
-        "type": "uint8"
+        "type": "bytes32"
       },
       {
-        "internalType": "uint8",
+        "internalType": "bytes32",
         "name": "systemScore",
-        "type": "uint8"
+        "type": "bytes32"
       },
       {
         "internalType": "bool",
@@ -139,9 +144,9 @@ export const CONTRACT_ABI = [
         "type": "bool"
       },
       {
-        "internalType": "uint8",
+        "internalType": "bytes32",
         "name": "lastSystemCard",
-        "type": "uint8"
+        "type": "bytes32"
       }
     ],
     "stateMutability": "view",
@@ -170,7 +175,7 @@ export const CONTRACT_ABI = [
     "inputs": [
       {
         "internalType": "uint8",
-        "name": "cardValue",
+        "name": "handIndex",
         "type": "uint8"
       }
     ],
@@ -181,9 +186,15 @@ export const CONTRACT_ABI = [
   },
   {
     "inputs": [],
-    "name": "startGame",
-    "outputs": [],
-    "stateMutability": "nonpayable",
+    "name": "protocolId",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "pure",
     "type": "function"
   },
   {
@@ -203,6 +214,13 @@ export const CONTRACT_ABI = [
       }
     ],
     "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "startGame",
+    "outputs": [],
+    "stateMutability": "nonpayable",
     "type": "function"
   }
 ] as const;
