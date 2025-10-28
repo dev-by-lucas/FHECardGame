@@ -184,7 +184,8 @@ export function CardGameApp() {
         const startTimestamp = Math.floor(Date.now() / 1000).toString();
         const durationDays = '7';
         const eip712 = instance.createEIP712(keypair.publicKey, contractAddresses, startTimestamp, durationDays);
-        const signature = await signer.signTypedData(eip712.domain, eip712.types, eip712.message);
+        const { EIP712Domain, ...messageTypes } = eip712.types as Record<string, any>;
+        const signature = await signer.signTypedData(eip712.domain, messageTypes, eip712.message);
 
         const signerAddress = await signer.getAddress();
         const decrypted = await instance.userDecrypt(
