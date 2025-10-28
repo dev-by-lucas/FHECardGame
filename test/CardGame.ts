@@ -1,5 +1,7 @@
 import { expect } from "chai";
-import { deployments, ethers } from "hardhat";
+import { FhevmType } from "@fhevm/hardhat-plugin";
+import hre, { deployments, ethers } from "hardhat";
+import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 
 const HAND_SIZE = 5;
 
@@ -9,17 +11,47 @@ describe("CardGame", function () {
     const deployment = await deployments.get("CardGame");
     const contract = await ethers.getContractAt("CardGame", deployment.address);
     const [player] = await ethers.getSigners();
-    return { contract, player };
+    await hre.fhevm.assertCoprocessorInitialized(contract, "CardGame");
+    return { contract, player, deployment };
+  }
+
+  async function decryptHandForPlayer(
+    handles: readonly string[],
+    contractAddress: string,
+    player: HardhatEthersSigner,
+  ): Promise<number[]> {
+    const decrypted: number[] = [];
+    for (const handle of handles) {
+      const value = await hre.fhevm.userDecryptEuint(FhevmType.euint8, handle, contractAddress, player);
+      decrypted.push(Number(value));
+    }
+    return decrypted;
+  }
+
+  async function decryptHandWithDebugger(handles: readonly string[]): Promise<number[]> {
+    const decrypted: number[] = [];
+    for (const handle of handles) {
+      const value = await hre.fhevm.debugger.decryptEuint(FhevmType.euint8, handle);
+      decrypted.push(Number(value));
+    }
+    return decrypted;
+  }
+
+  function asHandleArray(value: any): string[] {
+    return (value as string[]).map((handle) => handle);
   }
 
   it("deals unique non-overlapping hands", async function () {
-    const { contract, player } = await init();
+    const { contract, player, deployment } = await init();
 
     await contract.connect(player).startGame();
     const game = await contract.getGame(player.address);
 
-    const playerHand = game[0].map((card: bigint) => Number(card));
-    const systemHand = game[2].map((card: bigint) => Number(card));
+    const playerHandHandles = asHandleArray(game[0]);
+    const systemHandHandles = asHandleArray(game[2]);
+
+    const playerHand = await decryptHandForPlayer(playerHandHandles, deployment.address, player);
+    const systemHand = await decryptHandWithDebugger(systemHandHandles);
 
     expect(playerHand).to.have.lengthOf(HAND_SIZE);
     expect(systemHand).to.have.lengthOf(HAND_SIZE);
@@ -34,88 +66,111 @@ describe("CardGame", function () {
       expect(systemSet.has(card)).to.equal(false);
     }
 
-    const metadata = {
-      rounds: Number(game[4]),
-      playerScore: Number(game[5]),
-      systemScore: Number(game[6]),
-      active: game[7],
-    };
+    const rounds = Number(game[4]);
+    const playerScore = await hre.fhevm.userDecryptEuint(FhevmType.euint8, game[5], deployment.address, player);
+    const systemScore = await hre.fhevm.userDecryptEuint(FhevmType.euint8, game[6], deployment.address, player);
 
-    expect(metadata.rounds).to.equal(0);
-    expect(metadata.playerScore).to.equal(0);
-    expect(metadata.systemScore).to.equal(0);
-    expect(metadata.active).to.equal(true);
+    expect(rounds).to.equal(0);
+    expect(playerScore).to.equal(0n);
+    expect(systemScore).to.equal(0n);
+    expect(game[7]).to.equal(true);
   });
 
-  it("tracks used cards and rounds", async function () {
-    const { contract, player } = await init();
+  it("tracks used cards, rounds and last system card", async function () {
+    const { contract, player, deployment } = await init();
 
     await contract.connect(player).startGame();
     const initialGame = await contract.getGame(player.address);
-    const playerHand = initialGame[0].map((card: bigint) => Number(card));
+    const playerHandHandles = asHandleArray(initialGame[0]);
 
-    const firstCard = playerHand[0];
-    const secondCard = playerHand[1];
-
-    await contract.connect(player).playCard(firstCard);
+    await contract.connect(player).playCard(0);
     let updatedGame = await contract.getGame(player.address);
 
     expect(updatedGame[1][0]).to.equal(true);
     expect(Number(updatedGame[4])).to.equal(1);
-    expect(Number(updatedGame[8])).to.be.greaterThan(0);
 
-    await contract.connect(player).playCard(secondCard);
+    const lastSystemCard = await hre.fhevm.userDecryptEuint(
+      FhevmType.euint8,
+      updatedGame[8],
+      deployment.address,
+      player,
+    );
+    expect(lastSystemCard).to.be.greaterThan(0n);
+
+    await contract.connect(player).playCard(1);
     updatedGame = await contract.getGame(player.address);
 
     expect(updatedGame[1][0]).to.equal(true);
     expect(updatedGame[1][1]).to.equal(true);
     expect(Number(updatedGame[4])).to.equal(2);
+
+    const decryptedPlayerCard = await decryptHandForPlayer([playerHandHandles[0]], deployment.address, player);
+    expect(decryptedPlayerCard[0]).to.be.greaterThanOrEqual(1);
   });
 
   it("completes a full game and resets", async function () {
-    const { contract, player } = await init();
+    const { contract, player, deployment } = await init();
 
     await contract.connect(player).startGame();
-    let currentGame = await contract.getGame(player.address);
-    const playerCards = currentGame[0].map((card: bigint) => Number(card));
 
-    for (const card of playerCards) {
-      await contract.connect(player).playCard(card);
+    for (let index = 0; index < HAND_SIZE; index++) {
+      await contract.connect(player).playCard(index);
     }
 
-    currentGame = await contract.getGame(player.address);
+    let currentGame = await contract.getGame(player.address);
     expect(Number(currentGame[4])).to.equal(HAND_SIZE);
     expect(currentGame[7]).to.equal(false);
 
+    const finalPlayerScore = await hre.fhevm.userDecryptEuint(
+      FhevmType.euint8,
+      currentGame[5],
+      deployment.address,
+      player,
+    );
+    const finalSystemScore = await hre.fhevm.userDecryptEuint(
+      FhevmType.euint8,
+      currentGame[6],
+      deployment.address,
+      player,
+    );
+
+    expect(finalPlayerScore).to.be.at.least(0n);
+    expect(finalSystemScore).to.be.at.least(0n);
+
     await contract.connect(player).startGame();
-    const newGame = await contract.getGame(player.address);
-    expect(newGame[7]).to.equal(true);
-    expect(Number(newGame[4])).to.equal(0);
+    currentGame = await contract.getGame(player.address);
+
+    const resetPlayerScore = await hre.fhevm.userDecryptEuint(
+      FhevmType.euint8,
+      currentGame[5],
+      deployment.address,
+      player,
+    );
+
+    expect(currentGame[7]).to.equal(true);
+    expect(Number(currentGame[4])).to.equal(0);
+    expect(resetPlayerScore).to.equal(0n);
   });
 
-  it("prevents playing unused or invalid cards", async function () {
+  it("prevents playing reused or invalid indices", async function () {
     const { contract, player } = await init();
 
     await contract.connect(player).startGame();
-    const game = await contract.getGame(player.address);
-    const card = Number(game[0][0]);
 
-    await contract.connect(player).playCard(card);
-    await expect(contract.connect(player).playCard(card)).to.be.revertedWith("Card unavailable");
-    await expect(contract.connect(player).playCard(99)).to.be.revertedWith("Card unavailable");
+    await contract.connect(player).playCard(0);
+    await expect(contract.connect(player).playCard(0)).to.be.revertedWith("Card already used");
+    await expect(contract.connect(player).playCard(5)).to.be.revertedWith("Invalid card index");
   });
 
   it("prevents extra rounds", async function () {
     const { contract, player } = await init();
 
     await contract.connect(player).startGame();
-    const game = await contract.getGame(player.address);
-    const cards = game[0].map((card: bigint) => Number(card));
 
-    for (const card of cards) {
-      await contract.connect(player).playCard(card);
+    for (let index = 0; index < HAND_SIZE; index++) {
+      await contract.connect(player).playCard(index);
     }
 
-    await expect(contract.connect(player).playCard(cards[0])).to.be.revertedWith("Game not active");
+    await expect(contract.connect(player).playCard(0)).to.be.revertedWith("Game not active");
   });
 });
